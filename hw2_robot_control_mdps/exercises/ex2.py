@@ -2,10 +2,7 @@ import numpy as np
 
 
 def generate_quintic_spline_waypoints(start, end, num_points):
-
     """
-    TODO:
-
     Steps:
     1. Generate `num_points` linearly spaced time steps `s` between 0 and 1.
     2. Apply the quintic time scaling polynomial function which can be found in the slides to get `f_s`.
@@ -19,12 +16,15 @@ def generate_quintic_spline_waypoints(start, end, num_points):
     Returns:
         np.ndarray: Generated waypoints.
     """
-    raise NotImplementedError()
+    s = np.linspace(0, 1, num_points)
+    f_s = 10 * s**3 - 15 * s**4 + 6 * s**5
+    f_s = f_s.reshape(num_points, 1) # need to reshape for broadcasting
+    waypoints = start + (end - start) * f_s
+    return waypoints
 
 
-def pid_control(tracking_error_history, timestep, Kp=150.0, Ki=0.0, Kd=0.01):
+def pid_control(tracking_error_history, timestep, Kp=150.0, Ki=0.1, Kd=0.01):
     """
-    TODO:
     Compute the PID control signal based on the tracking error history.
     
     Steps:
@@ -44,5 +44,12 @@ def pid_control(tracking_error_history, timestep, Kp=150.0, Ki=0.0, Kd=0.01):
     Returns:
         np.ndarray: Control signal.
     """
-    raise NotImplementedError()
+    P = tracking_error_history[-1]
+    I = np.sum(tracking_error_history) * timestep
+    if len(tracking_error_history) > 1:
+        D = (tracking_error_history[-1] - tracking_error_history[-2]) / timestep
+    else:
+        D = 0.0
+    control_signal = Kp * P + Ki * I + Kd * D
+    return control_signal
             
