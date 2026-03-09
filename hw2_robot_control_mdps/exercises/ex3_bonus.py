@@ -55,21 +55,19 @@ def process_action(action: np.ndarray, jnt_range: np.ndarray, qpos_default: np.n
     and 0 corresponds to the midpoint of the joint range.
 
     Inputs:
-    - action: np.ndarray. Normalized actions from the policy. Dimensionality: 1D array, Shape: (num_joints,).
+    - action: np.ndarray. Normalized actions from the policy. Dimensionality: 1D array, Shape: (4,).
     - jnt_range: np.ndarray. Lower and upper limits for joints. Dimensionality: 2D array, Shape: (num_joints, 2).
     - qpos_default: np.ndarray. Default joint positions. Dimensionality: 1D array, Shape: (num_joints,).
 
     Returns:
     - target_qpos: np.ndarray. Target joint positions to apply as control. Dimensionality: 1D array, Shape: (num_joints,).
     """
+    target_qpos = qpos_default.copy()
     s = (action + 1) / 2  # s[i] is in [0, 1] for interpolation
     # lower limits: jnt_range[:, 0], upper limits: jnt_range[:, 1]
-    target_qpos = jnt_range[:, 0] + s * (jnt_range[:, 1] - jnt_range[:, 0])
-
-    # Freeze wrist-roll and jaw
-    for idx in [4, 5]:
-        target_qpos[idx] = qpos_default[idx]
-
+    target_qpos[:4] = jnt_range[:4, 0] + s * (jnt_range[:4, 1] - jnt_range[:4, 0])
+    # target_qpos[4] and target_qpos[5] (wrist-roll and jaw) remain at default positions since they are not controlled by the policy
+    
     return target_qpos
 
 

@@ -19,7 +19,9 @@ class SO100TrackEnvBonus(gym.Env):
         # Define Observation and Action Spaces
         obs = self._get_obs()
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=obs.shape, dtype=np.float64)
-        self.action_space = spaces.Box(low=-1, high=1, shape=(6,), dtype=np.float32)
+        # 4D policy controls joints [Rotation, Pitch, Elbow, Wrist_Roll].
+        # Wrist_Pitch and Jaw are fixed at default positions.
+        self.action_space = spaces.Box(low=-1, high=1, shape=(4,), dtype=np.float32)
         
         # Rendering
         self.render_mode = render_mode
