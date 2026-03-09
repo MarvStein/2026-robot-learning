@@ -46,7 +46,7 @@ def reset_target_position(base_pos: np.ndarray) -> np.ndarray:
     ])
     return target_pos
 
-def process_action(action: np.ndarray, jnt_range: np.ndarray) -> np.ndarray:
+def process_action(action: np.ndarray, jnt_range: np.ndarray, qpos_default: np.ndarray) -> np.ndarray:
     """
     Convert normalized actions [-1, 1] to target joint positions.
     
@@ -55,40 +55,62 @@ def process_action(action: np.ndarray, jnt_range: np.ndarray) -> np.ndarray:
     and 0 corresponds to the midpoint of the joint range.
 
     Inputs:
-    - action: np.ndarray. Normalized actions from the policy. Dimensionality: 1D array, Shape: (num_joints,).
+    - action: np.ndarray. Normalized actions from the policy. Dimensionality: 1D array, Shape: (4,).
     - jnt_range: np.ndarray. Lower and upper limits for joints. Dimensionality: 2D array, Shape: (num_joints, 2).
+    - qpos_default: np.ndarray. Default joint positions. Dimensionality: 1D array, Shape: (num_joints,).
 
     Returns:
     - target_qpos: np.ndarray. Target joint positions to apply as control. Dimensionality: 1D array, Shape: (num_joints,).
     """
+    target_qpos = qpos_default.copy()
     s = (action + 1) / 2  # s[i] is in [0, 1] for interpolation
     # lower limits: jnt_range[:, 0], upper limits: jnt_range[:, 1]
-    target_qpos = jnt_range[:, 0] + s * (jnt_range[:, 1] - jnt_range[:, 0])
+    target_qpos[:4] = jnt_range[:4, 0] + s * (jnt_range[:4, 1] - jnt_range[:4, 0])
+    # target_qpos[4] and target_qpos[5] (wrist-roll and jaw) remain at default positions since they are not controlled by the policy
+    
     return target_qpos
 
 
-def compute_reward(ee_tracking_error: float) -> float:
+def compute_reward(
+    ee_tracking_error: float,
+    qpos: np.ndarray,
+    qpos_default: np.ndarray,
+    action: np.ndarray,
+    prev_action: np.ndarray,
+    w_joint_posture: float = 0.01,
+    w_action_smoothness: float = 0.01,
+    w_action_magnitude: float = 0.01,
+) -> float:
     """
-    Calculate the reward based on the distance (error) to the target. 
-    Remember from the lecture slides that there are different types of rewards, e.g. dense and sparse. 
-    In reward design, it is often useful to combine these approaches. 
-    We do not expect you to take into account any advanced reward engineering in this exercise, such as penalizing large velocity and acceleration.
-    You can design your own reward function for the bonus question.
-
-    Descrtion of the reward function:
-    - dense_reward = exp(-2 * ee_tracking_error)
-    - sparse_reward = 1.0 if ee_tracking_error < 0.005 else 0.0
-    - reward = dense_reward + sparse_reward
+    Bonus question reward function
 
     Inputs:
     - ee_tracking_error: float. Distance between end-effector and target point. Dimensionality: scalar
+    - qpos: np.ndarray. Current joint positions. Dimensionality: 1D array, Shape: (num_joints,).
+    - qpos_default: np.ndarray. Default joint positions. Dimensionality: 1D array, Shape: (num_joints,).
+    - action: np.ndarray. Current action taken by the policy. Dimensionality: 1D array, Shape: (num_joints,).
+    - prev_action: np.ndarray. Previous action taken by the policy. Dimensionality: 1D array, Shape: (num_joints,).
+    - w_joint_posture: float. Weight for joint posture penalty term in the reward function.
+    - w_action_smoothness: float. Weight for action smoothness penalty term in the reward function.
+    - w_action_magnitude: float. Weight for action magnitude penalty term in the reward function.
 
     Returns:
     - reward: float. The computed reward based on the tracking error. Dimensionality: scalar
     """
     dense_reward = np.exp(-2 * ee_tracking_error)
     sparse_reward = 1.0 if ee_tracking_error < 0.005 else 0.0
-    reward = dense_reward + sparse_reward
+
+    joint_posture_penalty = w_joint_posture * np.linalg.norm(qpos - qpos_default)
+    action_smoothness_penalty = w_action_smoothness * np.linalg.norm(action - prev_action)
+    action_magnitude_penalty = w_action_magnitude * np.linalg.norm(action)
+
+    reward = (
+        dense_reward
+        + sparse_reward
+        - joint_posture_penalty
+        - action_smoothness_penalty
+        - action_magnitude_penalty
+    )
     return reward
 
 
