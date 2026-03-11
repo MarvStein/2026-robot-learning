@@ -29,7 +29,7 @@ class BasePolicy(nn.Module, metaclass=abc.ABCMeta):
         raise NotImplementedError
 
 
-# TODO: Students implement ObstaclePolicy here.
+# Students implement ObstaclePolicy here.
 class ObstaclePolicy(BasePolicy):
     """Predicts action chunks with an MSE loss.
 
@@ -37,16 +37,48 @@ class ObstaclePolicy(BasePolicy):
     (chunk_size * action_dim) and reshapes to (B, chunk_size, action_dim).
     """
 
-    def forward(self) -> torch.Tensor:
+    def __init__(
+        self,
+        state_dim: int,
+        action_dim: int,
+        chunk_size: int,
+        d_model: int,
+        depth: int
+    ) -> None:
+        super().__init__(state_dim, action_dim, chunk_size)
+        self.layers = nn.ModuleList()
+        for i in range(depth):
+            in_dim = state_dim if i == 0 else d_model
+            out_dim = chunk_size * action_dim if i == depth - 1 else d_model
+            self.layers.append(nn.Linear(in_dim, out_dim))
+            if i < depth - 1:
+                self.layers.append(nn.ReLU())
+
+    def forward(
+        self,
+        state: torch.Tensor
+    ) -> torch.Tensor:
         """Return predicted action chunk of shape (B, chunk_size, action_dim)."""
-        raise NotImplementedError
+        x = state
+        for layer in self.layers:
+            x = layer(x)
+        return x.view(-1, self.chunk_size, self.action_dim)
 
-    def compute_loss(self, state: torch.Tensor, action_chunk: torch.Tensor) -> torch.Tensor:
-        raise NotImplementedError
+    def compute_loss(
+        self,
+        state: torch.Tensor,
+        action_chunk: torch.Tensor
+    ) -> torch.Tensor:
+        pred = self.forward(state)
+        return nn.functional.mse_loss(pred, action_chunk)
 
-    def sample_actions(self, state: torch.Tensor) -> torch.Tensor:
-        raise NotImplementedError
-
+    def sample_actions(
+        self,
+        state: torch.Tensor,
+    ) -> torch.Tensor:
+        self.eval()
+        with torch.no_grad():
+            return self.forward(state)
 
 # TODO: Students implement MultiTaskPolicy here.
 class MultiTaskPolicy(BasePolicy):
@@ -71,13 +103,18 @@ def build_policy(
     *,
     state_dim: int,
     action_dim: int,
-    # TODO,
+    chunk_size: int,
+    d_model: int,
+    depth: int
 ) -> BasePolicy:
     if policy_type == "obstacle":
+        # use default chunk_size and hidden_dim
         return ObstaclePolicy(
             action_dim=action_dim,
             state_dim=state_dim,
-            # TODO: Build with your chosen specifications
+            chunk_size=chunk_size,
+            d_model=d_model,
+            depth=depth,
         )
     if policy_type == "multitask":
         return MultiTaskPolicy(
