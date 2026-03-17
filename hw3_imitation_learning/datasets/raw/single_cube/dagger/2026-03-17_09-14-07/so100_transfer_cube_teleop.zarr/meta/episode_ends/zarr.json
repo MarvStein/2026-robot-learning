@@ -1,13 +1,13 @@
 {
   "shape": [
-    35
+    10
   ],
   "data_type": "int64",
   "chunk_grid": {
     "name": "regular",
     "configuration": {
       "chunk_shape": [
-        35
+        1024
       ]
     }
   },
