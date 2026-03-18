@@ -28,7 +28,7 @@ from hw3.model import BasePolicy, build_policy
 from torch.utils.data import DataLoader, random_split
 
 # Choose your own hyperparameters!
-EPOCHS = 50 
+EPOCHS = 300 
 BATCH_SIZE = 64
 LR = 1e-4
 VAL_SPLIT = 0.1
@@ -200,7 +200,9 @@ def main() -> None:
         action_dim=actions.shape[1],
         chunk_size=args.chunk_size,
         d_model=D_MODEL,
-        depth=DEPTH
+        depth=DEPTH,
+        state_mean=torch.as_tensor(normalizer.state_mean),
+        state_std=torch.as_tensor(normalizer.state_std)
     ).to(device)
 
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)

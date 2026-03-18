@@ -142,6 +142,8 @@ def run_episode(
             return False, True, None
         if key == ord("r"):
             return False, False, wrong_in_bin
+        if key == ord("s"):  # Fast-forward (skip rendering) for the rest of this episode
+            headless = True
         if key == ord(" "):
             while True:
                 k2 = cv2.waitKey(50) & 0xFF
