@@ -80,6 +80,46 @@ class ObstaclePolicy(BasePolicy):
         with torch.no_grad():
             return self.forward(state)
 
+class ResidualMLP(nn.Module):
+    """MLP with Residual Blocks and Dropout (used by MultiTaskPolicy)."""
+    def __init__(
+        self, 
+        state_dim: int, 
+        action_dim: int,
+        chunk_size: int,
+        d_model: int, 
+        depth: int, 
+        dropout: float = 0.1,
+        skip_connections: bool = True
+    ) -> None:
+        super().__init__()
+        self.state_dim = state_dim
+        self.action_dim = action_dim
+        self.chunk_size = chunk_size
+        self.skip_connections = skip_connections
+        self.input_projection = nn.Linear(state_dim, d_model)
+        
+        # Residual blocks
+        self.blocks = nn.ModuleList([
+            nn.Sequential(
+                nn.Linear(d_model, d_model),
+                nn.ReLU(),
+                nn.Dropout(dropout)
+            ) for _ in range(depth)
+        ])
+        
+        # Final projection
+        self.output_projection = nn.Linear(d_model, chunk_size * action_dim)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.input_projection(x)
+        for block in self.blocks:
+            if self.skip_connections:
+                x = x + block(x)
+            else:
+                x = block(x)
+        return self.output_projection(x).view(-1, self.chunk_size, self.action_dim)
+
 # Students implement MultiTaskPolicy here.
 class MultiTaskPolicy(BasePolicy):
     """Goal-conditioned policy for the multicube scene.
@@ -113,13 +153,13 @@ class MultiTaskPolicy(BasePolicy):
         # state[13:16] is state_goal
         # state[16:19] is goal_pos
 
-        self.mlp_input_dim = 10 # x,y,z of ee, gripper, x,y,z of attended cube, goal_pos
+        self.mlp_input_dim = 7 # gripper, ee_to_cube (3), ee_to_goal (3)
         
         self.register_buffer("state_mean", state_mean)
         self.register_buffer("state_std", state_std)
 
         # Reuse ObstaclePolicy as MLP (no obstacle)
-        self.obstacle_policy = ObstaclePolicy(
+        self.mlp = ResidualMLP(
             state_dim=self.mlp_input_dim,
             action_dim=action_dim,
             chunk_size=chunk_size,
@@ -142,22 +182,21 @@ class MultiTaskPolicy(BasePolicy):
         """Return predicted action chunk of shape (B, chunk_size, action_dim)."""
         B = state.shape[0]
         
+        gripper = state[:, 3:4] # (B, 1)
         # we undo the normalization for two reasons:
         # 1.    state_goal should be truly one-hot (1.00 - mean)/std != 1.00
         # 2.    The MLP should be indifferent to which cube is actually the target ("attended_cube")
         #       and thus the cube position should always use the same scaling.
         #       i.e. we undo the normalization and then apply (WLOG) the normalization of the red cube to the attended_cube
         unnormalized_state = (state * self.state_std) + self.state_mean
-        
-        robot_state = state[:, :4] # ee_xyz, gripper (B, 4)
         # sanity check to be 100% sure we have binary values (1.00 and 0.00) even if
         # undoing the normalization leads to small numerical inaccuracies.
         state_goal = nn.functional.one_hot(unnormalized_state[:, 13:16].argmax(dim=1), num_classes=3).float() # (B, 3)
-        goal_pos = state[:, 16:19]
+        robot_xyz = unnormalized_state[:, :3] # (B, 3) # use unnormalized such that substracting attended_cube from robot_xyz is in the same scale
+        goal_pos = unnormalized_state[:, 16:19]
         
         # Attention with one-hot state_goal as weights to isolate target cube
         weights = state_goal.unsqueeze(-1)
-
         cubes = unnormalized_state[:, 4:13].view(B, 3, 3) # (B, 3, 3), second dim is cube index, third dim is xyz of cube
         attended_cube = (cubes * weights).sum(dim=1)
         # e.g. cubes = [[[x_r, y_r, z_r], [x_g, y_g, z_g], [x_b, y_b, z_b]]]
@@ -168,10 +207,12 @@ class MultiTaskPolicy(BasePolicy):
 
         # normalize attended_cube but use same mean and std no matter which cube it is
         # we use mean and std of the red cube but (hopefully) doesn't matter which one we used.
-        attended_cube = (attended_cube - self.state_mean[4:7]) / self.state_std[4:7]
+        # attended_cube = (attended_cube - self.state_mean[4:7]) / self.state_std[4:7]
+        ee_to_cube = attended_cube - robot_xyz # (B, 3)
+        ee_to_goal = goal_pos - robot_xyz # (B, 3)
         
-        x = torch.cat([robot_state, attended_cube, goal_pos], dim=1)
-        return self.obstacle_policy(x)
+        x = torch.cat([gripper, ee_to_cube, ee_to_goal], dim=1)
+        return self.mlp(x)
 
     def compute_loss(
         self,

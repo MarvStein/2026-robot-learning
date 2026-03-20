@@ -113,3 +113,5 @@ python scripts/eval.py \
 --multicube \
 --headless \
 --num-episodes 100
+
+python student_eval/run_eval.py --exercise 3 --checkpoint checkpoints/multi_cube/best_model_ee_xyz_multitask_dagger20ep.pt

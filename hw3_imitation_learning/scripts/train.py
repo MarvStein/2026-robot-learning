@@ -28,12 +28,12 @@ from hw3.model import BasePolicy, build_policy
 from torch.utils.data import DataLoader, random_split
 
 # Choose your own hyperparameters!
-EPOCHS = 300 
-BATCH_SIZE = 64
-LR = 1e-4
+EPOCHS = 400 
+BATCH_SIZE = 256
+LR = 3e-4
 VAL_SPLIT = 0.1
 D_MODEL = 512
-DEPTH = 4
+DEPTH = 6
 
 def train_one_epoch(
     model: BasePolicy,
