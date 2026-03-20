@@ -24,15 +24,25 @@ from hw3.dataset import (
 )
 from hw3.model import BasePolicy, build_policy
 
-# TODO: Any imports you want from torch or other libraries we use. Not allowed: libraries we don't use
+# Any imports you want from torch or other libraries we use. Not allowed: libraries we don't use
 from torch.utils.data import DataLoader, random_split
 
-# TODO: Choose your own hyperparameters!
-EPOCHS = ... 
-BATCH_SIZE = ...
-LR = ...
-VAL_SPLIT = 0.1
-
+hyperparameters_ex1_2 = {
+    "epochs": 300,
+    "batch_size": 64,
+    "lr": 1e-4,
+    "val_split": 0.1,
+    "d_model": 512,
+    "depth": 4
+}
+hyperparameters_ex3 = {
+    "epochs": 400,
+    "batch_size": 256,
+    "lr": 3e-4,
+    "val_split": 0.1,
+    "d_model": 512,
+    "depth": 6
+}
 
 def train_one_epoch(
     model: BasePolicy,
@@ -46,8 +56,16 @@ def train_one_epoch(
 
     for batch in loader:
         states, action_chunks = batch
-        # TODO: Implement the training step for one batch here.
+        # Implement the training step for one batch here.
         # This mostly: Get states and action_chunks onto the correct device, compute the loss, and step the optimizer.
+        states = states.to(device)
+        action_chunks = action_chunks.to(device)
+        optimizer.zero_grad()
+        loss = model.compute_loss(states, action_chunks)
+        loss.backward()
+        optimizer.step()
+        total_loss += loss.item()
+        n_batches += 1
 
     return total_loss / max(n_batches, 1)
 
@@ -64,7 +82,12 @@ def evaluate(
 
     for batch in loader:
         states, action_chunks = batch
-        # TODO: Implement the evaluation step for one batch here.
+        # Implement the evaluation step for one batch here.
+        states = states.to(device)
+        action_chunks = action_chunks.to(device)
+        loss = model.compute_loss(states, action_chunks)
+        total_loss += loss.item()
+        n_batches += 1
 
     return total_loss / max(n_batches, 1)
 
@@ -74,6 +97,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Train action-chunking policy.")
     parser.add_argument(
         "--zarr", type=Path, required=True, help="Path to processed .zarr store."
+    )
+    parser.add_argument(
+        "--exercise",
+        choices=["1", "2", "3"],
+        default="1",
+        help="Exercise number (1, 2 or 3, default: 1)",
     )
     parser.add_argument(
         "--policy",
@@ -104,10 +133,50 @@ def main() -> None:
         "If omitted, uses the action_key attribute from the zarr metadata.",
     )
     parser.add_argument("--seed", type=int, default=42, help="Random seed.")
+    # hotfix for extra_zarr
+    parser.add_argument(
+        "--extra-zarr", 
+        nargs="+",
+        type=Path,
+        default=None,
+        help="Additional path(s) to processed .zarr stores."
+    )
     args = parser.parse_args()
 
+    # set hyperparameters based on exercise
+    if args.exercise == "1" or args.exercise == "2":
+        EPOCHS = hyperparameters_ex1_2["epochs"]
+        BATCH_SIZE = hyperparameters_ex1_2["batch_size"]
+        LR = hyperparameters_ex1_2["lr"]
+        VAL_SPLIT = hyperparameters_ex1_2["val_split"]
+        D_MODEL = hyperparameters_ex1_2["d_model"]
+        DEPTH = hyperparameters_ex1_2["depth"]
+    elif args.exercise == "3":
+        EPOCHS = hyperparameters_ex3["epochs"]
+        BATCH_SIZE = hyperparameters_ex3["batch_size"]
+        LR = hyperparameters_ex3["lr"]
+        VAL_SPLIT = hyperparameters_ex3["val_split"]
+        D_MODEL = hyperparameters_ex3["d_model"]
+        DEPTH = hyperparameters_ex3["depth"]
+    else:
+        raise ValueError(f"Unknown exercise number: {args.exercise}")
+
     torch.manual_seed(args.seed)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # from https://pytorch.org/docs/stable/notes/mps.html
+    def get_best_device() -> str:
+        if not torch.backends.mps.is_available():
+            if not torch.backends.mps.is_built():
+                print("MPS not available because the current PyTorch install was not "
+                    "built with MPS enabled.")
+            else:
+                print("MPS not available because the current MacOS version is not 12.3+ "
+                    "and/or you do not have an MPS-enabled device on this machine.")
+            device_str = "cuda:0" if torch.cuda.is_available() else "cpu"
+        else:
+            device_str = "mps"
+        return device_str
+
+    device = get_best_device()
     print(f"Device: {device}")
 
     # ── load data ─────────────────────────────────────────────────────
@@ -155,19 +224,26 @@ def main() -> None:
     )
 
     # ── model ─────────────────────────────────────────────────────────
+    # Note to myself: arguments to build_policy need to be stored in the checkpoint
+    # and load_checkpoint() in eval_utils.py needs to be updated to correctly
+    # re-instantiate the model during evaluation.
     model = build_policy(
         args.policy,
         state_dim=states.shape[1],
         action_dim=actions.shape[1],
-        # TODO: build with your desired specifications
+        chunk_size=args.chunk_size,
+        d_model=D_MODEL,
+        depth=DEPTH,
+        state_mean=torch.as_tensor(normalizer.state_mean),
+        state_std=torch.as_tensor(normalizer.state_std)
     ).to(device)
 
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Model parameters: {n_params:,}")
 
-    # TODO: implement an optimizer and scheduler
-    # optimizer =
-    # scheduler =
+    # implement an optimizer and scheduler
+    optimizer = torch.optim.AdamW(model.parameters(), lr=LR)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS) 
 
     # ── training loop ─────────────────────────────────────────────────
     best_val = float("inf")
@@ -223,6 +299,8 @@ def main() -> None:
                     "state_dim": int(states.shape[1]),
                     "action_dim": int(actions.shape[1]),
                     "val_loss": val_loss,
+                    "d_model": D_MODEL,
+                    "depth": DEPTH,
                 },
                 save_path,
             )

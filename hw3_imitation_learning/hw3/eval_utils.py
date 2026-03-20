@@ -124,6 +124,8 @@ def load_checkpoint(
         chunk_size=chunk_size,
         d_model=d_model,
         depth=depth,
+        state_mean=torch.as_tensor(normalizer.state_mean),
+        state_std=torch.as_tensor(normalizer.state_std)
     )
     model.load_state_dict(ckpt["model_state_dict"])
     model.to(device)
