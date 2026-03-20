@@ -27,13 +27,22 @@ from hw3.model import BasePolicy, build_policy
 # Any imports you want from torch or other libraries we use. Not allowed: libraries we don't use
 from torch.utils.data import DataLoader, random_split
 
-# Choose your own hyperparameters!
-EPOCHS = 400 
-BATCH_SIZE = 256
-LR = 3e-4
-VAL_SPLIT = 0.1
-D_MODEL = 512
-DEPTH = 6
+hyperparameters_ex1_2 = {
+    "epochs": 300,
+    "batch_size": 64,
+    "lr": 1e-4,
+    "val_split": 0.1,
+    "d_model": 512,
+    "depth": 4
+}
+hyperparameters_ex3 = {
+    "epochs": 400,
+    "batch_size": 256,
+    "lr": 3e-4,
+    "val_split": 0.1,
+    "d_model": 512,
+    "depth": 6
+}
 
 def train_one_epoch(
     model: BasePolicy,
@@ -90,6 +99,12 @@ def main() -> None:
         "--zarr", type=Path, required=True, help="Path to processed .zarr store."
     )
     parser.add_argument(
+        "--exercise",
+        choices=["1", "2", "3"],
+        default="1",
+        help="Exercise number (1, 2 or 3, default: 1)",
+    )
+    parser.add_argument(
         "--policy",
         choices=["obstacle", "multitask"],
         default="obstacle",
@@ -127,6 +142,24 @@ def main() -> None:
         help="Additional path(s) to processed .zarr stores."
     )
     args = parser.parse_args()
+
+    # set hyperparameters based on exercise
+    if args.exercise == "1" or args.exercise == "2":
+        EPOCHS = hyperparameters_ex1_2["epochs"]
+        BATCH_SIZE = hyperparameters_ex1_2["batch_size"]
+        LR = hyperparameters_ex1_2["lr"]
+        VAL_SPLIT = hyperparameters_ex1_2["val_split"]
+        D_MODEL = hyperparameters_ex1_2["d_model"]
+        DEPTH = hyperparameters_ex1_2["depth"]
+    elif args.exercise == "3":
+        EPOCHS = hyperparameters_ex3["epochs"]
+        BATCH_SIZE = hyperparameters_ex3["batch_size"]
+        LR = hyperparameters_ex3["lr"]
+        VAL_SPLIT = hyperparameters_ex3["val_split"]
+        D_MODEL = hyperparameters_ex3["d_model"]
+        DEPTH = hyperparameters_ex3["depth"]
+    else:
+        raise ValueError(f"Unknown exercise number: {args.exercise}")
 
     torch.manual_seed(args.seed)
     # from https://pytorch.org/docs/stable/notes/mps.html
