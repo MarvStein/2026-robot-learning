@@ -92,10 +92,10 @@ class PPOAgent:
             # 5. compute the state value from the critic
             action = self.actor.act(obs)
             action_clipped = torch.clamp(action, -1.0, 1.0)
-            action_log_prob = self.actor.get_actions_log_prob(action)
+            action_log_prob = self.actor.get_actions_log_prob(action).item()
             action_mu = self.actor.action_mean
             action_std = self.actor.action_std
-            value = self.critic(obs)
+            value = self.critic(obs).item()
 
         return action, action_clipped, value, action_log_prob, action_mu, action_std
 
@@ -280,7 +280,7 @@ class PPOAgent:
             nn.utils.clip_grad_norm_(chain(self.actor.parameters(), self.critic.parameters()), self.max_grad_norm)
             self.optimizer.step()
 
-            mean_kl += kl
+            mean_kl += kl.item()
             mean_surrogate_loss += surrogate_loss.item()
             mean_value_loss += value_loss.item()
             mean_entropy += entropy_batch.mean().item()
