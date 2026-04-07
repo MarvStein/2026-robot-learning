@@ -175,10 +175,13 @@ class SACAgent:
             next_action, next_logp = self.actor.act(next_obs)
             q1_next, q2_next = self.critic_target(next_obs, next_action)
             q_next = torch.min(q1_next, q2_next) - self.alpha * next_logp
-            target_q = rew + self.gamma * (1 - done) * q_next
+            # Reshape rew and done to match q_next shape [batch_size, 1]
+            rew_reshaped = rew.reshape(-1, 1)
+            done_reshaped = done.reshape(-1, 1)
+            target_q = rew_reshaped + self.gamma * (1.0 - done_reshaped) * q_next
 
         q1_pred, q2_pred = self.critic(obs, act)
-        critic_loss = torch.mean(F.mse_loss(q1_pred, target_q) + F.mse_loss(q2_pred, target_q))
+        critic_loss = (F.mse_loss(q1_pred, target_q) + F.mse_loss(q2_pred, target_q)) / 2.0
 
         return critic_loss
 
